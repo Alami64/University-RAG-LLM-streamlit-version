@@ -13,7 +13,7 @@ from tempfile import NamedTemporaryFile
 import whisper
 import time
 from pydub import playback
-import pydub
+# import pydub
 _ = load_dotenv(find_dotenv())  # read local .env file
 
 
@@ -195,21 +195,21 @@ def generate_audio(input):
 
     response.stream_to_file("output.mp3")
 
-
+    st.audio("output.mp3")
 
 ##### Main UI and Logic ###################################
 
 ##### Voice to Text #######
 
-def play_audio(file):
-    sound = pydub.AudioSegment.from_file(file, format="mp3")
-    playback.play(sound)
+# def play_audio(file):
+#     sound = pydub.AudioSegment.from_file(file, format="mp3")
+#     playback.play(sound)
 
 
 if 'text_received' not in st.session_state:
     st.session_state.text_received = ""
 
-mute = st.checkbox("Mute Chatbot",help="If pressed, the chatbot will not speak.")
+# mute = st.checkbox("Mute Chatbot",help="If pressed, the chatbot will not speak.")
 audio_bytes = audio_recorder(text="", pause_threshold=1.5, key="audio",
                              sample_rate=60000, energy_threshold=0.003, icon_size="2x")
 text = ""
@@ -314,7 +314,7 @@ if st.session_state.question_submit_clicked or st.session_state.answer_in_email_
         if st.session_state.question_submit_clicked and not mute:
             # with st.spinner("Generating Audio..."):
             generate_audio(final_response)
-            play_audio("output.mp3")
+            # play_audio("output.mp3")
         else:
             pass
 
