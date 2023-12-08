@@ -4,7 +4,7 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import streamlit as st
 from langchain.memory import ConversationBufferMemory
-from dataprocess import return_answer, load_default_resources, default_resources, generate_email_format_answer, check_response_before_answer, translate_to_selected_response_language
+from dataprocess import return_answer, load_default_resources, default_resources, generate_email_format_answer, check_response_before_answer, translate_to_selected_response_language, load_memory
 from dotenv import load_dotenv, find_dotenv
 import openai
 import os
@@ -12,6 +12,8 @@ from audio_recorder_streamlit import audio_recorder
 from tempfile import NamedTemporaryFile
 import whisper
 import time
+from pydub import playback
+import pydub
 _ = load_dotenv(find_dotenv())  # read local .env file
 
 
@@ -38,6 +40,7 @@ left_co, cent_co, last_co = st.columns(3)
 with cent_co:
     st.image('./images/jolly.png')
     st.header("SFBU ChatBot", anchor=False, divider="rainbow")
+
 ##########################################################
 
 
@@ -55,10 +58,6 @@ if 'retriever' not in st.session_state:
     st.session_state.retriever = st.session_state.default_vectorstore.as_retriever(
         search_type="similarity", search_kwargs={"k": 5})
 
-# Initialise memory variable
-if 'memory' not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory(
-        memory_key="chat_history", max_len=20, return_messages=True)
 
 # Initialise question_submit_clicked variable
 if 'question_submit_clicked' not in st.session_state:
@@ -68,9 +67,9 @@ if 'question_submit_clicked' not in st.session_state:
 if 'answer_in_email_format_clicked' not in st.session_state:
     st.session_state.answer_in_email_format_clicked = False
 
-# Initialise chat history variable
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# # Initialise chat history variable
+# if "messages" not in st.session_state:
+#     st.session_state.messages = []
 
 # Initialise model variable
 if 'model' not in st.session_state:
@@ -183,8 +182,7 @@ def result_all_button_state():
 
 def clear_chat_history():
     st.session_state.messages = []
-    st.session_state.memory = ConversationBufferMemory(
-        memory_key="chat_history", max_len=20, return_messages=True)
+   
 
 
 def generate_audio(input):
@@ -197,16 +195,21 @@ def generate_audio(input):
 
     response.stream_to_file("output.mp3")
 
-    st.audio("output.mp3")
 
 
 ##### Main UI and Logic ###################################
 
 ##### Voice to Text #######
 
+def play_audio(file):
+    sound = pydub.AudioSegment.from_file(file, format="mp3")
+    playback.play(sound)
+
+
 if 'text_received' not in st.session_state:
     st.session_state.text_received = ""
 
+mute = st.checkbox("Mute Chatbot",help="If pressed, the chatbot will not speak.")
 audio_bytes = audio_recorder(text="", pause_threshold=1.5, key="audio",
                              sample_rate=60000, energy_threshold=0.003, icon_size="2x")
 text = ""
@@ -242,27 +245,37 @@ with c3:
 
 #############################################
 
+# reset qa variable
+st.session_state.qa = return_answer(
+        st.session_state.temperature, st.session_state.model, st.session_state.retriever)
+    
+memory = load_memory(st)
+
 # After submitting the question
 if st.session_state.question_submit_clicked or st.session_state.answer_in_email_format_clicked:
 
-    # reset qa variable
-    st.session_state.qa = return_answer(
-        st.session_state.temperature, st.session_state.model, st.session_state.memory, st.session_state.retriever)
 
     query = st.session_state.query
 
     print("User submitted question --> : ", query)
+
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": query})
 
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(query)
 
     with st.spinner("Generating Answer..."):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": query})
-
         # Call the QA function with the necessary parameters to retrieve the initial resposne
-        first_result = st.session_state.qa({"question": query})['answer']
+        first_result = st.session_state.qa(
+            {
+                "question": query,
+                "chat_history": memory.load_memory_variables({})["history"]
+            }
+        )
+
+        first_result = first_result["answer"]
 
         print("First result --> : ", first_result)
 
@@ -298,9 +311,10 @@ if st.session_state.question_submit_clicked or st.session_state.answer_in_email_
                 full_response + "|", unsafe_allow_html=True)
         message_placeholder.markdown(full_response, unsafe_allow_html=True)
         st.divider()
-        if st.session_state.question_submit_clicked:
-            with st.spinner("Generating Audio..."):
-                generate_audio(final_response)
+        if st.session_state.question_submit_clicked and not mute:
+            # with st.spinner("Generating Audio..."):
+            generate_audio(final_response)
+            play_audio("output.mp3")
         else:
             pass
 
@@ -311,20 +325,8 @@ if st.session_state.question_submit_clicked or st.session_state.answer_in_email_
 
     # Reset the button state to wait for the next question
     result_all_button_state()
-    # st.session_state.text_received = ""
+
 
 
 ##########################################################
 
-##### Dispaly Previous Chat History #######
-st.divider()
-
-with st.expander("Click to view chat history"):
-    # Display chat messages from history on app rerun
-    # skip the current question and answer pair which is the last one
-    for message_idx in range(len(st.session_state.messages)-3, -1, -1):
-        message = st.session_state.messages[message_idx]
-        with st.chat_message(message["role"]):
-            st.markdown('<div>' + message["content"] +
-                        '</div>', unsafe_allow_html=True)
-    ##########################

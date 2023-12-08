@@ -138,3 +138,4 @@ wrapt==1.16.0
 yarl==1.9.3
 zipp==3.17.0
 pysqlite3-binary
+pydub==0.25.1

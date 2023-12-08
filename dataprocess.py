@@ -2,7 +2,7 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import DocArrayInMemorySearch
 from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import PromptTemplate
 from langchain.chat_models import ChatOpenAI
 from langchain.document_loaders import PyPDFLoader
@@ -18,6 +18,8 @@ from dotenv import load_dotenv, find_dotenv
 from langchain.prompts import ChatPromptTemplate
 from resources_config import default_resources
 import streamlit as st
+from prompts import QUESTION_CREATOR_TEMPLATE
+
 _ = load_dotenv(find_dotenv())  # read local .env file
 openai.api_key = os.environ['OPENAI_API_KEY']
 
@@ -118,32 +120,45 @@ def load_default_resources(load_from_local_stored_files=False):
     return vectordb
 
 
-def return_answer(temperature, model, memory, retriever, verbose=True, chaintype="stuff"):
-    general_system_template = """
-    You are a customer service assistant for San Francisco Bay University. Please give a short answer to the student's question \
-    Please answer the question in the input language. \
-    Please do not hallucinate or make up information. \
-    Please answer in a friendly and professional tone. \
-    Chat History: {chat_history}\
-    Follow Up Input: {question}\
+def load_memory(st):
+    """Load memory from session state
+
+    Args:
+        st: streamlit object
+
+    Returns:
+        memory_loader: ConversationBufferMemory object
     """
+    memory = ConversationBufferWindowMemory(k=3, return_messages=True)
 
-    PROMPT = PromptTemplate(
-        input_variables=["chat_history", "question"],
-        template=general_system_template
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = [
+            
+        ]
+    for index, msg in enumerate(st.session_state.messages):
+        st.chat_message(msg["role"]).markdown('<div>' + msg["content"] +
+                        '</div>', unsafe_allow_html=True)
+        if msg["role"] == "user" and index < len(st.session_state.messages) - 1:
+            memory.save_context(
+                {"input": msg["content"]},
+                {"output": st.session_state.messages[index + 1]["content"]},
+            )
+
+    return memory
+
+@st.cache_resource
+def return_answer(temperature, model, _retriever):
+
+    condense_question_prompt = PromptTemplate.from_template(QUESTION_CREATOR_TEMPLATE)
+    chain = ConversationalRetrievalChain.from_llm(
+        llm=ChatOpenAI(model_name=model, temperature=temperature),
+        retriever=_retriever,
+        condense_question_llm=ChatOpenAI(model_name="gpt-3.5-turbo-1106"),
+        condense_question_prompt=condense_question_prompt,
+        verbose=True,
     )
 
-    qa = ConversationalRetrievalChain.from_llm(
-        llm=ChatOpenAI(model_name=model,
-                       temperature=temperature, max_tokens=300),
-        chain_type=chaintype,
-        retriever=retriever,
-        memory=memory,
-        verbose=verbose,
-        condense_question_prompt=PROMPT,
-        rephrase_question=False
-    )
-    return qa
+    return chain
 
 
 def generate_email_format_answer(client, messages, model="gpt-3.5-turbo-1106", temperature=0, max_tokens=800):
