@@ -311,7 +311,7 @@ if st.session_state.question_submit_clicked or st.session_state.answer_in_email_
                 full_response + "|", unsafe_allow_html=True)
         message_placeholder.markdown(full_response, unsafe_allow_html=True)
         st.divider()
-        if st.session_state.question_submit_clicked and not mute:
+        if st.session_state.question_submit_clicked:
             # with st.spinner("Generating Audio..."):
             generate_audio(final_response)
             # play_audio("output.mp3")
